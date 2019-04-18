@@ -3,7 +3,6 @@ import numpy as np
 import dlib
 import pyautogui, sys, pytweening
 import blink
-import tkinter as tk
 
 
 
@@ -31,14 +30,14 @@ def getLeftAndRightEyes(faces, eyes):
                 #eyes are arrays of the form [minX, minY, maxX, maxY]
                 if (leftEye[0]+leftEye[2]) > (rightEye[0]+rightEye[2]): #leftCenter is > rightCenter
                     rightEye, leftEye = leftEye, rightEye #swap
-                if contains(leftEye,rightEye) or contains(rightEye, leftEye):#they overlap. One eye containing another is due to a double detection; ignore it
+                if contains(leftEye,rightEye) or contains(rightEye, leftEye):
                     debugPrint('rejecting double eye')
                     continue
-                if leftEye[3] < rightEye[1] or rightEye[3] < leftEye[1]:#top of one is below (>) bottom of the other. One is likely a mouth or something, not an eye.
+                if leftEye[3] < rightEye[1] or rightEye[3] < leftEye[1]:
                     debugPrint('rejecting non-level eyes')
                     continue
 
-                if not (contains(face,leftEye) and contains(face,rightEye)):#face contains the eyes. This is our standard of humanity, so capture the face.
+                if not (contains(face,leftEye) and contains(face,rightEye)):
                     debugPrint("face doesn't contain both eyes")
                     continue
                 
@@ -193,7 +192,7 @@ def getOffset(frame, allowDebugDisplay=True, trackAverageOffset=True, directInfe
     x0 = 768  # height your screen
     y0 = 1366  # Width your screen
     threshold_size_X = 13
-    threshold_size_Y = 15
+    threshold_size_Y = 18
     x,y,_ = frame.shape
     # find faces and eyes
     minFaceSize = (80,80)
@@ -213,6 +212,8 @@ def getOffset(frame, allowDebugDisplay=True, trackAverageOffset=True, directInfe
         pupilXYList = []
         pupilCenterEstimates = []
         cen = []
+        center_eye = []
+        eye33 = []
         for eyeIndex, eye in enumerate(leftEye_rightEye):
 
             corner = eye.copy()
@@ -232,164 +233,89 @@ def getOffset(frame, allowDebugDisplay=True, trackAverageOffset=True, directInfe
             pupilXYList.append( (cx+eye[0],cy+eye[1])  )
             if len(cen) == 2:
                cen =[]
+               center_eye = []
+               eye33 = []
             else:
                cen.append([int(pupilXYList[eyeIndex][0]), int(pupilXYList[eyeIndex][1])])
-          
+               center_eye.append([cy,cx])
+               eye33.append([eye[0], eye[1], eye[2], eye[3]])
             if allowDebugDisplay:
                 if len(cen) == 2:
-                   data = np.array(cen)
-                   center = np.average(data, axis=0)
-                   
-                   cv2.circle(output, (int(center[0]), int(center[1])), 3, (255,255,0),thickness=1) 
-                   nn ,n = center[0], center[1]
+                    data = np.array(cen)
+                    center = np.average(data, axis=0)
 
-                   o = (n/y) * 100.0
-                   ox = (nn/x) * 100.0
+                    threshold_size_X = int(((eye33[0][2]-eye33[0][0])/100.0) * threshold_size_X)
+                    threshold_size_Y = int(((eye33[0][3]-eye33[0][1])/100.0) * threshold_size_Y)
+                    
+                    left_s   = ((eye33[0][0]+threshold_size_X),(eye33[0][1]+threshold_size_Y))
+                    right_s  = ((eye33[1][0]+threshold_size_X),(eye33[1][1]+threshold_size_Y))
+                    
+                    left_end   = ((eye33[0][2]-threshold_size_X),(eye33[0][3]-threshold_size_Y))
+                    right_end  = ((eye33[1][2]-threshold_size_X),(eye33[1][3]-threshold_size_Y))
+                    
+                    full_lx = left_end[0] -  left_s[0]
+                    full_rx = right_end[0] - right_s[0] #end
+                    full_ly = left_end[1] -  left_s[1]
+                    full_ry = right_end[1] - right_s[1]
+                    
+                    center_lxy = (cen[0][0] - left_s[0] , cen[0][1] - left_s[1])
+                    center_rxy = (cen[1][0] - right_s[0] , cen[1][1] - left_s[1])
+                    
+                    #left
+                    
+                    eyelx = (float(center_lxy[0])/float(full_lx)) * 100.0
+                    eyely = (float(center_lxy[1])/float(full_ly)) * 100.0
+                    eyelbx = ((x0)/100.0) * eyelx
+                    eyelby = ((y0)/100.0) * eyely
+                    
+                    #right
+                    #thrld_rx = (full_rx/100.0) * threshold_size_X
+                    
+                    eyerx = (float(center_rxy[0])/float(full_rx)) * 100.0
+                    eyery = (float(center_rxy[1])/float(full_ry)) * 100.0
+                    eyerbx = ((x0)/100.0) * eyerx
+                    eyerby = ((y0)/100.0) * eyery
+                    #print(center_lxy,full_lx,full_ly,center_rxy,full_rx,full_ry,eyerx,eyerby)
+                    if eyely < eyery-20 and eyely > eyery+20 or eyelx < eyerx-20 and eyelx > eyerx+20:
+                        continue
+                    
+                    point_virt = (int(eyerbx),int(eyerby))
+                    
+                    cv2.line(output,right_s,right_s,(255,255,255),5)
+                    cv2.line(output,left_s,left_s,(255,255,255),5)
+                    cv2.line(output,right_end,right_end,(255,255,255),5)
+                    cv2.line(output,left_end,left_end,(255,255,255),5)
+                    cv2.line(output,(cen[0][0],cen[0][1]),left_s,(255,0,0),1) #vc
+                    cv2.line(output,(cen[1][0],cen[1][1]),right_s,(255,0,0),1) #vc
+                    cv2.circle(output, (int(center[0]), int(center[1])), 3, (255,255,0),thickness=1) 
+                    cv2.circle(output, left_s, 3, (255,255,255),thickness=1)
+                    cv2.circle(output, right_s, 3, (255,255,255),thickness=1)
+
+                    mox = int(point_virt[0])
+                    moy = int(point_virt[1])
+                    print('mov to_ ',point_virt)
+                    if mox !=0 and moy !=0:
+                        pyautogui.moveTo(moy,mox)
                    
-                   ob = ((y0+50)/100.0) * o
-                   obx = ((x0+50)/100.0) * ox
-                   
-                   ob = int(ob)
-                   obx = int(obx)
-                   #print((ob, obx),'::::' ,n,nn,'y,x,y0,x0_',y,x,y0,x0)
-                   if ob !=0 and obx !=0:
-                      pyautogui.moveTo(obx, ob)
-                   
-                cv2.rectangle(output, (eye[0], eye[1]), (eye[2], eye[3]), (0,255,0), 1)
-                #print(pupilXYList[eyeInadex])
+                cv2.rectangle(output, (eye[0], eye[1]), (eye[2], eye[3]), (0,0,255), 1)
                 cv2.circle(output, (int(pupilXYList[eyeIndex][0]), int(pupilXYList[eyeIndex][1])), 3, (255,0,0),thickness=1) #BGR format
-                #print((int(pupilXYList[eyeIndex][0]), int(pupilXYList[eyeIndex][1])))
-
-
-                width, height = pyautogui.size()
-
                 ###############----------new block -----------#############
 
                 face = faces[0]
                 face_one = dlib.rectangle(face[0], face[1],face[2 ], face[3])
-                
-                stat1 = blink.blinks(gray2 ,face_one)
-                print(stat1)
-                stat2 = blink.write_slogan()
-                print(stat2)
-                
-                #stat2 = blink.write_slogan()
-                #print(stat2)
-                
-               #stat2 = b1.write_slogan()
-                #print(stat2)
-                selected=0
-                if stat1 == 'closed_eye':
-                    cv2.putText(output, "eyes: {}".format(stat1), (10, 30),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 244, 255), 2)
-                    if((int(pupilXYList[eyeIndex][0]))>=0 and (int(pupilXYList[eyeIndex][0]))<325):
-                        
-                           
-                        selected=1
-                        button1 = tk.Button(activebackground='yellow')
-                        button1.pack(side=tk.LEFT)
-                        print('button11')
-                        #root.mainloop()   
-                    if((int(pupilXYList[eyeIndex][0]))>=330 and (int(pupilXYList[eyeIndex][0]))<655):
-                        
-                           
-                        selected=1
-                        button2 = tk.Button(activebackground='yellow')
-                        button2.pack(side=tk.LEFT)
-                        print('button22')
-                        #root.mainloop()   
-                    if((int(pupilXYList[eyeIndex][0]))>=660 and (int(pupilXYList[eyeIndex][0]))<985):
-                        
-                       selected=1
-                       button3 = tk.Button(activebackground='yellow')
-                       button3.pack(side=tk.LEFT)
-                       print('button33')
-                       #root.mainloop()   
-                    else:
-                        
-                        selected=1
-                        button4 = tk.Button(activebackground='yellow')
-                        button4.pack(side=tk.LEFT)
-                        print('button44')
-                        #root.mainloop()   
+                stat = blink.blinks(gray2 ,face_one)
+                #print(stat)
+                if stat == 'closed_eye':
+                   cv2.putText(output, "eyes: {}".format(stat), (10, 30),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 244, 255), 2)
+                if stat == 'open_eye':
+                   cv2.putText(output, "eyes: {}".format(stat), (10, 30),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 244, 255), 2)
 
-                                                
-                if stat1 == 'open_eye':
-                    #def createLayout(self):
-                            #self.SetTitle("enable/disable")
-                    #stat2 = blink.write_slogan()
-                    cv2.putText(output, "eyes: {}".format(stat1), (10, 30),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 244, 255), 2)   
-                    if((int(pupilXYList[eyeIndex][0]))>=0 and (int(pupilXYList[eyeIndex][0]))<340):
-                            #x=(int(pupilXYList[eyeIndex][0]))>=0 and (int(pupilXYList[eyeIndex][0]))<340
-                            #self.AddButton(1011, c4d.BFH_MASK, initw=145, name="Enable")
-                            #pyautogui.click()
-                        #button1 = tk.Button(activebackground='green')
-                        #button1.pack(side=tk.LEFT)
-                        button1 = tk.Button(activebackground='green')
-                        button1.pack(side=tk.LEFT)
-                        button2 = tk.Button(activebackground='red')
-                        button2.pack(side=tk.LEFT)
-                        button3 = tk.Button(activebackground='red')
-                        button3.pack(side=tk.LEFT)
-                        button4 = tk.Button(activebackground='red')
-                        button4.pack(side=tk.LEFT)
-                        #root.mainloop()   
-                    elif((int(pupilXYList[eyeIndex][0]))>=340 and (int(pupilXYList[eyeIndex][0]))<680):
-                            #pyautogui.doubleClick()
-                        #slogan = tk.Button(activebackground='green')
-                        #slogan.pack(side=tk.LEFT)
-                        button1 = tk.Button(activebackground='red')
-                        button1.pack(side=tk.LEFT)
-                        button2 = tk.Button(activebackground='green')
-                        button2.pack(side=tk.LEFT)
-                        button3 = tk.Button(activebackground='red')
-                        button3.pack(side=tk.LEFT)
-                        button4 = tk.Button(activebackground='red')
-                        button4.pack(side=tk.LEFT)
-                        
-                        #root.mainloop()   
-                    elif((int(pupilXYList[eyeIndex][0]))>=680 and (int(pupilXYList[eyeIndex][0]))<1020):
-                            #pyautogui.tripleClick()
-                        #slogan2 = tk.Button(activebackground='green')
-                        #slogan2.pack(side=tk.LEFT)
-                        button1 = tk.Button(activebackground='red')
-                        button1.pack(side=tk.LEFT)
-                        button2 = tk.Button(activebackground='red')
-                        button2.pack(side=tk.LEFT)
-                        button3 = tk.Button(activebackground='green')
-                        button3.pack(side=tk.LEFT)
-                        button4 = tk.Button(activebackground='red')
-                        button4.pack(side=tk.LEFT)
-                        #root.mainloop()   
-                    else:
-
-                            #pyautogui.click()
-                        #slogan3 = tk.Button( activebackground='green' )
-                        #slogan3.pack(side=tk.LEFT)
-                        button1 = tk.Button(activebackground='red')
-                        button1.pack(side=tk.LEFT)
-                        button2 = tk.Button(activebackground='red')
-                        button2.pack(side=tk.LEFT)
-                        button3 = tk.Button(activebackground='red')
-                        button3.pack(side=tk.LEFT)
-                        button4 = tk.Button(activebackground='green')
-                        button4.pack(side=tk.LEFT)
-                        #root.mainloop()   
-                
-                
-                    pytweening.linear(0.75)
-                    ######### this code to determine x,y
-                    x, y = pyautogui.position()
-                    positionStr = 'X: ' + str(x).rjust(4) + ' Y: ' + str(y).rjust(4)
-                    print(positionStr, end='')
-                    print('\b' * len(positionStr), end='', flush=True)
-            #root.mainloop()
 
     cv2.imshow(WINDOW_NAME,output)
 
 WINDOW_NAME = "preview"
 def main():
     cv2.namedWindow(WINDOW_NAME) # open a window to show debugging images
-
     vc = cv2.VideoCapture(0) # Initialize the default camera
     try:
         if vc.isOpened(): # try to get the first frame
@@ -415,4 +341,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
